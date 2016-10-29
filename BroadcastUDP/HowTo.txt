@@ -1,0 +1,3 @@
+javac *.java
+jar cfm UDP.jar Manifest.txt *.class
+java -jar UDP.jar
