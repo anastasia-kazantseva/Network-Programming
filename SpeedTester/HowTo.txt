@@ -1,0 +1,5 @@
+javac *.java
+jar cfm server.jar Manifest.txt Server.class ClientInfo.class
+
+java -jar server.jar
+java Client <Server IP>
