@@ -1,0 +1,4 @@
+javac *.java
+
+java Server
+java Client <server IP> <file path>
