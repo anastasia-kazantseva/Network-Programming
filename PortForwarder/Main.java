@@ -81,48 +81,36 @@ public class Main {
     private static void acceptKey(ServerSocketChannel channel, Selector selector, SocketAddress rAddress) throws IOException {
         SocketChannel clientFrom = channel.accept();
         SocketChannel clientTo = SocketChannel.open();
-        //System.out.println("one");
 
         clientFrom.configureBlocking(false);
         clientTo.configureBlocking(false);
-        //System.out.println("two");
         ConnectionInfo info = new ConnectionInfo(clientFrom, clientTo);
-        //System.out.println("three");
         clientFrom.register(selector, SelectionKey.OP_READ, info);
         if (clientTo.connect(rAddress)) {
-            //System.out.println("four");
             clientTo.register(selector, SelectionKey.OP_READ, info);
-            //System.out.println("five");
         } else {
-            //System.out.println("four_2");
             clientTo.register(selector, SelectionKey.OP_CONNECT, info);
-            //System.out.println("five_2");
         }
 
-        //clientFrom.keyFor(selector).attach(info);
-        //clientTo.keyFor(selector).attach(info);
-        System.out.println("ACCEPT");
+        //System.out.println("ACCEPT");
     }
 
     private static void connectKey(SelectionKey key) throws IOException {
         ((SocketChannel)key.channel()).finishConnect();
         key.interestOps(key.interestOps() & ~SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
-        System.out.println("CONNECT");
+        //System.out.println("CONNECT");
     }
 
     private static void readKey(SelectionKey key, Selector selector) throws IOException {
         ConnectionInfo info = (ConnectionInfo) key.attachment();
-        //System.out.println("one");
         SocketChannel clientFrom = (SocketChannel) key.channel();
-        //System.out.println("two");
         SocketChannel clientTo = info.getChannel(clientFrom);
-        //System.out.println("three");
 
-        clientFrom.read(info.getReadBuffer(clientFrom));
-        //System.out.println("four");
+        ByteBuffer buffer = info.getReadBuffer(clientFrom);
+        clientFrom.read(buffer);
+        //buffer.flip();
         //clientTo.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, info);
         clientTo.keyFor(selector).interestOps(clientTo.keyFor(selector).interestOps() | SelectionKey.OP_WRITE);
-        //System.out.println("five");
         System.out.println("READ");
     }
 
@@ -132,7 +120,7 @@ public class Main {
         //SocketChannel clientFrom = info.getChannel(clientTo);
 
         ByteBuffer buffer = info.getWriteBuffer(clientTo);
-
+        buffer.flip();
         clientTo.write(buffer);
         buffer.compact();
 
