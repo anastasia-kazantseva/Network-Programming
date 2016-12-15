@@ -2,10 +2,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -52,7 +49,7 @@ public class Main {
         channel.register(selector, channel.validOps());
 
         while (true) {
-            int readyChannels = selector.selectNow();
+            int readyChannels = selector.select(1000);
             if (readyChannels == 0) {
                 continue;
             }
@@ -84,12 +81,19 @@ public class Main {
 
         clientFrom.configureBlocking(false);
         clientTo.configureBlocking(false);
+
         ConnectionInfo info = new ConnectionInfo(clientFrom, clientTo);
         clientFrom.register(selector, SelectionKey.OP_READ, info);
-        if (clientTo.connect(rAddress)) {
-            clientTo.register(selector, SelectionKey.OP_READ, info);
-        } else {
-            clientTo.register(selector, SelectionKey.OP_CONNECT, info);
+        try {
+            if (clientTo.connect(rAddress)) {
+                clientTo.register(selector, SelectionKey.OP_READ, info);
+            } else {
+                clientTo.register(selector, SelectionKey.OP_CONNECT, info);
+            }
+        } catch (IOException e) {
+            clientFrom.keyFor(selector).cancel();
+            clientTo.close();
+            clientFrom.close();
         }
 
         //System.out.println("ACCEPT");
@@ -98,36 +102,55 @@ public class Main {
     private static void connectKey(SelectionKey key) throws IOException {
         ((SocketChannel)key.channel()).finishConnect();
         key.interestOps(key.interestOps() & ~SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+
         //System.out.println("CONNECT");
     }
 
     private static void readKey(SelectionKey key, Selector selector) throws IOException {
-        ConnectionInfo info = (ConnectionInfo) key.attachment();
-        SocketChannel clientFrom = (SocketChannel) key.channel();
-        SocketChannel clientTo = info.getChannel(clientFrom);
+        try {
+            ConnectionInfo info = (ConnectionInfo) key.attachment();
+            SocketChannel clientFrom = (SocketChannel) key.channel();
+            SocketChannel clientTo = info.getChannel(clientFrom);
 
-        ByteBuffer buffer = info.getReadBuffer(clientFrom);
-        clientFrom.read(buffer);
-        //buffer.flip();
-        //clientTo.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, info);
-        clientTo.keyFor(selector).interestOps(clientTo.keyFor(selector).interestOps() | SelectionKey.OP_WRITE);
-        System.out.println("READ");
+            ByteBuffer buffer = info.getReadBuffer(clientFrom);
+            try {
+                clientFrom.read(buffer);
+
+                clientTo.keyFor(selector).interestOps(clientTo.keyFor(selector).interestOps() | SelectionKey.OP_WRITE);
+            } catch (IOException e) {
+                key.cancel();
+                clientTo.keyFor(selector).cancel();
+                clientTo.close();
+            }
+        } catch (CancelledKeyException e) {
+
+        }
+        //System.out.println("READ");
     }
 
     private static void writeKey(SelectionKey key, Selector selector) throws IOException {
-        ConnectionInfo info = (ConnectionInfo) key.attachment();
-        SocketChannel clientTo = (SocketChannel) key.channel();
-        //SocketChannel clientFrom = info.getChannel(clientTo);
+        try {
+            ConnectionInfo info = (ConnectionInfo) key.attachment();
+            SocketChannel clientTo = (SocketChannel) key.channel();
 
-        ByteBuffer buffer = info.getWriteBuffer(clientTo);
-        buffer.flip();
-        clientTo.write(buffer);
-        buffer.compact();
+            ByteBuffer buffer = info.getWriteBuffer(clientTo);
+            buffer.flip();
+            try {
+                clientTo.write(buffer);
+                buffer.compact();
 
-        if (!buffer.hasRemaining()) {
-            //clientTo.register(selector, SelectionKey.OP_READ, info);
-            clientTo.keyFor(selector).interestOps(clientTo.keyFor(selector).interestOps() & ~SelectionKey.OP_WRITE);
+                if (!buffer.hasRemaining()) {
+                    clientTo.keyFor(selector).interestOps(clientTo.keyFor(selector).interestOps() & ~SelectionKey.OP_WRITE);
+                }
+            } catch (IOException e) {
+                key.cancel();
+                info.getChannel(clientTo).keyFor(selector).cancel();
+                info.getChannel(clientTo).close();
+            }
+        } catch (CancelledKeyException e) {
+
         }
-        System.out.println("WRITE");
+
+        //System.out.println("WRITE");
     }
 }
